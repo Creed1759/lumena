@@ -9,6 +9,7 @@ import type {
   SessionKeyPolicyRule,
   TimeBoundsRule,
   MaxOperationsRule,
+  ContractAllowlistRule,
 } from "@lumen/types";
 import { validateTimeBounds } from "@lumen/core";
 
@@ -56,6 +57,10 @@ export class PolicyEngine {
     return this.policies.get(walletId) ?? null;
   }
 
+  listPolicies(): Policy[] {
+    return Array.from(this.policies.values());
+  }
+
   evaluate(opts: EvaluateOpts): EvaluateResult {
     const policy = this.policies.get(opts.walletAddress);
 
@@ -91,6 +96,8 @@ export class PolicyEngine {
         return this.evaluateTimeBounds(rule as TimeBoundsRule, opts);
       case "max_operations":
         return this.evaluateMaxOperations(rule as MaxOperationsRule, opts);
+      case "contract_allowlist":
+        return this.evaluateContractAllowlist(rule as ContractAllowlistRule, opts);
       default:
         return { approved: true };
     }
@@ -307,6 +314,60 @@ export class PolicyEngine {
         approved: false,
         reason: `Transaction operation count ${opCount} exceeds limit of ${rule.maxOperations}`,
       };
+    }
+
+    return { approved: true };
+  }
+
+  evaluateContractAllowlist(rule: ContractAllowlistRule, opts: EvaluateOpts): EvaluateResult {
+    for (const op of opts.transaction.operations) {
+      // Soroban contract invocations have type 'invokeHostFunction'
+      if (op.type !== "invokeHostFunction") {
+        continue;
+      }
+
+      const invokeOp = op as unknown as {
+        type: string;
+        func?: {
+          contractAddress?: { contractId?: () => string; toString?: () => string };
+          functionName?: string;
+        };
+      };
+
+      // Extract the contract ID from the host function
+      const contractId =
+        invokeOp.func?.contractAddress?.contractId?.() ??
+        invokeOp.func?.contractAddress?.toString?.() ??
+        null;
+
+      if (!contractId) {
+        return {
+          approved: false,
+          reason: "Contract invocation is missing a contract address",
+        };
+      }
+
+      const allowedEntry = rule.allowedContracts.find(
+        (c: { contractId: string; methods?: string[] }) => c.contractId === contractId,
+      );
+
+      if (!allowedEntry) {
+        return {
+          approved: false,
+          reason: `Contract ${contractId} is not in the allowlist`,
+        };
+      }
+
+      // If methods are specified, verify the invoked function matches
+      if (allowedEntry.methods && allowedEntry.methods.length > 0) {
+        const invokedMethod = invokeOp.func?.functionName;
+        if (!invokedMethod || !allowedEntry.methods.includes(invokedMethod)) {
+          return {
+            approved: false,
+            reason: `Method ${invokedMethod ?? "(unknown)"} is not allowed for contract ${contractId}`,
+          };
+        }
+      }
     }
 
     return { approved: true };

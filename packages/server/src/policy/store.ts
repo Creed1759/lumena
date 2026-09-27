@@ -12,6 +12,10 @@ export class InMemoryPolicyStore implements PolicyStore {
     return this.policies.get(walletId) ?? null;
   }
 
+  async listPolicies(): Promise<Policy[]> {
+    return Array.from(this.policies.values());
+  }
+
   async savePolicy(policy: Policy): Promise<void> {
     this.policies.set(policy.walletId, policy);
   }
@@ -118,6 +122,10 @@ export class FilePolicyStore implements PolicyStore {
     return this.policies.get(walletId) ?? null;
   }
 
+  async listPolicies(): Promise<Policy[]> {
+    return Array.from(this.policies.values());
+  }
+
   async savePolicy(policy: Policy): Promise<void> {
     this.policies.set(policy.walletId, policy);
     await this.persist();
@@ -168,14 +176,15 @@ export class FilePolicyStore implements PolicyStore {
 
 export interface RedisClientInterface {
   get(key: string): Promise<string | null>;
-  set(key: string, value: string): Promise<any>;
-  del(key: string): Promise<any>;
+  set(key: string, value: string): Promise<unknown>;
+  del(key: string): Promise<unknown>;
   incrbyfloat(key: string, increment: number | string): Promise<string>;
   incr(key: string): Promise<number>;
   expire(key: string, seconds: number): Promise<number>;
   zadd(key: string, score: number, member: string): Promise<number>;
   zremrangebyscore(key: string, min: string | number, max: string | number): Promise<number>;
   zcard(key: string): Promise<number>;
+  keys(pattern: string): Promise<string[]>;
 }
 
 export class RedisPolicyStore implements PolicyStore {
@@ -199,6 +208,25 @@ export class RedisPolicyStore implements PolicyStore {
     } catch {
       return null;
     }
+  }
+
+  async listPolicies(): Promise<Policy[]> {
+    const keys = await this.redis.keys(`${this.keyPrefix}policy:*`);
+    const policies: Policy[] = [];
+    for (const key of keys) {
+      const raw = await this.redis.get(key);
+      if (!raw) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed.createdAt) {
+          parsed.createdAt = new Date(parsed.createdAt);
+        }
+        policies.push(parsed as Policy);
+      } catch {
+        // skip unparseable entries
+      }
+    }
+    return policies;
   }
 
   async savePolicy(policy: Policy): Promise<void> {

@@ -38,3 +38,9 @@ export type { UseTrustlineResult } from "./use-trustline.js";
 
 export { useTransactionHistory } from "./use-transaction-history.js";
 export type { Transaction, UseTransactionHistoryResult } from "./use-transaction-history.js";
+
+export { LumenBalance } from "./components/LumenBalance.js";
+export type { LumenBalanceProps } from "./components/LumenBalance.js";
+
+export { LumenWalletCard } from "./components/LumenWalletCard.js";
+export type { LumenWalletCardProps } from "./components/LumenWalletCard.js";

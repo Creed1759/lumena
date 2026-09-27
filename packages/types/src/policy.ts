@@ -12,7 +12,8 @@ export type PolicyRule =
   | BlocklistRule
   | SessionKeyPolicyRule
   | TimeBoundsRule
-  | MaxOperationsRule;
+  | MaxOperationsRule
+  | ContractAllowlistRule;
 
 export interface SpendLimit {
   type: "spend_limit";
@@ -55,10 +56,20 @@ export interface MaxOperationsRule {
   maxOperations: number;
 }
 
+export interface ContractAllowlistRule {
+  type: "contract_allowlist";
+  allowedContracts: Array<{
+    contractId: string;
+    /** If omitted or empty, all methods are allowed for this contract. */
+    methods?: string[];
+  }>;
+}
+
 export interface PolicyStore {
   getPolicy(walletId: string): Promise<Policy | null>;
   savePolicy(policy: Policy): Promise<void>;
   deletePolicy(walletId: string): Promise<void>;
+  listPolicies(): Promise<Policy[]>;
   recordSpend(
     walletId: string,
     date: string,

@@ -10,6 +10,7 @@ import {
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
 import { StellarClient } from "@lumen/core";
 import type { Signer } from "@lumen/types";
+import type { WalletRegistry } from "@lumen/core";
 import { CosignerService } from "./cosigner/service.js";
 import { FeeSponsorService } from "./fee-sponsor/service.js";
 import { PolicyEngine } from "./policy/engine.js";
@@ -98,6 +99,12 @@ export interface ServerOpts {
   };
   rateLimitWindowMs?: number;
   rateLimitMax?: number;
+  /**
+   * Optional WalletRegistry to persist and list registered wallet addresses.
+   * When provided, POST /wallet/create registers the new wallet and
+   * GET /wallets lists all registered wallets.
+   */
+  walletRegistry?: WalletRegistry;
 }
 
 /** Creates the Lumen API server, service graph, and policy engine. */
@@ -381,6 +388,12 @@ export function createServer(opts: ServerOpts): ServerResult {
       });
 
       const result = await wallet.create();
+
+      // Register the new wallet address if a registry is configured
+      if (opts.walletRegistry) {
+        await opts.walletRegistry.register(result.address);
+      }
+
       void webhookDispatcher
         .dispatch("wallet.created", {
           address: result.address,
@@ -390,6 +403,38 @@ export function createServer(opts: ServerOpts): ServerResult {
           logger.error({ error }, "Failed to dispatch wallet.created webhook");
         });
       res.json({ address: result.address, publicKey: result.publicKey });
+    }),
+  );
+
+  // #169 — GET /wallets: list all registered wallets
+  app.get(
+    "/wallets",
+    wrapHandler(async (req: Request, res: Response) => {
+      if (!opts.walletRegistry) {
+        res.json({ wallets: [], total: 0 });
+        return;
+      }
+
+      const allWallets = await opts.walletRegistry.list();
+
+      const limitParam = req.query.limit;
+      const offsetParam = req.query.offset;
+
+      const limit = limitParam === undefined ? 50 : Math.max(1, Math.min(200, Number(limitParam)));
+      const offset = offsetParam === undefined ? 0 : Math.max(0, Number(offsetParam));
+
+      const paginated = allWallets.slice(offset, offset + limit);
+
+      res.json({ wallets: paginated, total: allWallets.length });
+    }),
+  );
+
+  // #170 — GET /policy: list all configured policies
+  app.get(
+    "/policy",
+    wrapHandler(async (_req: Request, res: Response) => {
+      const policies = policyEngine.listPolicies();
+      res.json({ policies, count: policies.length });
     }),
   );
 
@@ -417,8 +462,8 @@ export function createServer(opts: ServerOpts): ServerResult {
         throw new ValidationError("cursor must be a string");
       }
 
-      let transactions = client
-        .horizon.transactions()
+      let transactions = client.horizon
+        .transactions()
         .forAccount(address)
         .order("desc")
         .limit(limit);
