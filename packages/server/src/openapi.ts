@@ -415,6 +415,179 @@ export const openApiSpec = {
         },
       },
     },
+    "/webhooks": {
+      get: {
+        summary: "List Webhooks",
+        description: "Returns all registered webhook configurations (secrets omitted).",
+        responses: {
+          "200": {
+            description: "List of registered webhooks",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/WebhookConfig" },
+                },
+              },
+            },
+          },
+        },
+      },
+      post: {
+        summary: "Register Webhook",
+        description: "Registers a new webhook endpoint to receive Lumen event notifications.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/WebhookRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "Webhook registered successfully",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/WebhookConfig" },
+              },
+            },
+          },
+          "400": { description: "Invalid webhook configuration" },
+        },
+      },
+    },
+    "/webhooks/{id}": {
+      delete: {
+        summary: "Delete Webhook",
+        description: "Unregisters a webhook by its ID.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+            description: "Webhook ID.",
+          },
+        ],
+        responses: {
+          "204": { description: "Webhook deleted" },
+          "404": { description: "Webhook not found" },
+        },
+      },
+      patch: {
+        summary: "Update Webhook",
+        description:
+          "Partially updates a webhook — toggle enabled state or change the subscribed event list. " +
+          "At least one field must be provided. The webhook ID and secret cannot be changed.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+            description: "Webhook ID.",
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  url: {
+                    type: "string",
+                    format: "uri",
+                    description: "New destination URL.",
+                    example: "https://example.com/webhook",
+                  },
+                  events: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Replacement event subscription list.",
+                    example: ["transaction.cosigned", "wallet.created"],
+                  },
+                  enabled: {
+                    type: "boolean",
+                    description: "Set to false to pause delivery without deleting the webhook.",
+                    example: false,
+                  },
+                },
+                minProperties: 1,
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Webhook updated successfully",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/WebhookConfig" },
+              },
+            },
+          },
+          "400": { description: "Invalid patch payload" },
+          "404": { description: "Webhook not found" },
+        },
+      },
+    },
+    "/webhooks/{id}/test": {
+      post: {
+        summary: "Send Test Webhook",
+        description:
+          "Dispatches a synthetic `test.ping` event to the registered webhook URL. " +
+          "Useful for verifying endpoint reachability and signature validation without " +
+          "triggering real on-chain activity.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+            description: "Webhook ID.",
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Test delivery attempted",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: {
+                      type: "boolean",
+                      description: "Whether the remote server returned a 2xx response.",
+                      example: true,
+                    },
+                    statusCode: {
+                      type: "integer",
+                      nullable: true,
+                      description: "HTTP status code returned by the remote server.",
+                      example: 200,
+                    },
+                    attempts: {
+                      type: "integer",
+                      description: "Always 1 for test deliveries.",
+                      example: 1,
+                    },
+                    responseTimeMs: {
+                      type: "integer",
+                      description: "Round-trip time in milliseconds.",
+                      example: 142,
+                    },
+                  },
+                  required: ["success", "statusCode", "attempts", "responseTimeMs"],
+                },
+              },
+            },
+          },
+          "404": { description: "Webhook not found" },
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -486,6 +659,40 @@ export const openApiSpec = {
           createdAt: { type: "string", format: "date-time" },
         },
         required: ["id", "walletId", "rules"],
+      },
+      WebhookConfig: {
+        type: "object",
+        description: "Registered webhook configuration (secret is never returned).",
+        properties: {
+          id: { type: "string", example: "550e8400-e29b-41d4-a716-446655440000" },
+          url: { type: "string", format: "uri", example: "https://example.com/webhook" },
+          events: {
+            type: "array",
+            items: { type: "string" },
+            example: ["transaction.cosigned", "wallet.created"],
+          },
+          enabled: { type: "boolean", example: true },
+        },
+        required: ["id", "url", "events"],
+      },
+      WebhookRequest: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Optional custom ID; auto-generated if omitted." },
+          url: { type: "string", format: "uri", example: "https://example.com/webhook" },
+          secret: {
+            type: "string",
+            description: "HMAC-SHA256 signing secret used to verify delivery signatures.",
+            example: "s3cr3t",
+          },
+          events: {
+            type: "array",
+            items: { type: "string" },
+            example: ["transaction.cosigned"],
+          },
+          enabled: { type: "boolean", default: true },
+        },
+        required: ["url", "secret", "events"],
       },
     },
   },

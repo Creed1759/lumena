@@ -198,22 +198,39 @@ export class LumenClient {
 
   /**
    * Establish or modify a trustline for the given wallet.
+   *
+   * The asset is resolved in this order:
+   *   1. If `assetCode` contains a colon (e.g. `"USDC:G..."`), it is parsed
+   *      as `<code>:<issuer>` directly.
+   *   2. Otherwise, `KNOWN_ASSETS[network][assetCode]` is looked up.
+   *
    * Pass `limit = '0'` to remove the trustline.
    *
    * @param id        - wallet id (account address)
-   * @param assetCode - the asset code, e.g. 'USDC'
-   * @param issuer    - the issuer's Stellar public key
-   * @param limit     - maximum balance limit (omit for default; '0' to remove)
+   * @param assetCode - the asset code (e.g. `'USDC'`) or a `'CODE:ISSUER'` string
+   * @param limit     - maximum balance limit (omit for default; `'0'` to remove)
    */
-  async changeTrust(
-    id: string,
-    assetCode: string,
-    issuer: string,
-    limit?: string,
-  ): Promise<{ hash: string }> {
+  async changeTrust(id: string, assetCode: string, limit?: string): Promise<{ hash: string }> {
     const wallet = this.wallets.get(id);
     if (!wallet) throw new Error(`Wallet not found: ${id}`);
-    const asset = new Asset(assetCode, issuer);
+
+    let asset: Asset;
+
+    if (assetCode.includes(":")) {
+      // Custom asset passed as "CODE:ISSUER"
+      const [code, issuer] = assetCode.split(":", 2) as [string, string];
+      asset = new Asset(code, issuer);
+    } else {
+      const network = this.client.config.network;
+      const knownAsset = KNOWN_ASSETS[network]?.[assetCode];
+      if (!knownAsset) {
+        throw new Error(
+          `Unknown asset: ${assetCode}. Pass as 'CODE:ISSUER' or use one of the known assets: ${Object.keys(KNOWN_ASSETS[network] ?? {}).join(", ")}`,
+        );
+      }
+      asset = knownAsset;
+    }
+
     return wallet.changeTrust(asset, limit);
   }
 
