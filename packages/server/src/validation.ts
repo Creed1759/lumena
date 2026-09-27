@@ -44,12 +44,18 @@ const MaxOperationsRuleSchema = z.object({
   maxOperations: z.number().int().positive("maxOperations must be a positive integer"),
 });
 
+const FeeLimitRuleSchema = z.object({
+  type: z.literal("fee_limit"),
+  maxFeeStroops: z.number().int().positive("maxFeeStroops must be a positive integer"),
+});
+
 const PolicyRuleSchema = z.discriminatedUnion("type", [
   SpendLimitSchema,
   VelocityRuleSchema,
   AllowlistRuleSchema,
   BlocklistRuleSchema,
   MaxOperationsRuleSchema,
+  FeeLimitRuleSchema,
 ]);
 
 export const PolicyRequestSchema = z.object({

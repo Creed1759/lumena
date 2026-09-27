@@ -38,3 +38,6 @@ export type { UseTrustlineResult } from "./use-trustline.js";
 
 export { useTransactionHistory } from "./use-transaction-history.js";
 export type { Transaction, UseTransactionHistoryResult } from "./use-transaction-history.js";
+
+export { useSessionKey } from "./use-session-key.js";
+export type { SessionKeyState } from "./use-session-key.js";

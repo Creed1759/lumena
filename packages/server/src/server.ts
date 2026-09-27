@@ -131,6 +131,7 @@ export function createServer(opts: ServerOpts): ServerResult {
     sponsorPublicKey: opts.feePayerSigner.publicKey(),
     minBalanceXlm: opts.minSponsorBalance,
     pollIntervalMs: opts.sponsorPollIntervalMs,
+    webhookDispatcher,
   });
 
   const app = express();
@@ -417,8 +418,8 @@ export function createServer(opts: ServerOpts): ServerResult {
         throw new ValidationError("cursor must be a string");
       }
 
-      let transactions = client
-        .horizon.transactions()
+      let transactions = client.horizon
+        .transactions()
         .forAccount(address)
         .order("desc")
         .limit(limit);

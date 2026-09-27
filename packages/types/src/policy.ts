@@ -12,7 +12,8 @@ export type PolicyRule =
   | BlocklistRule
   | SessionKeyPolicyRule
   | TimeBoundsRule
-  | MaxOperationsRule;
+  | MaxOperationsRule
+  | FeeLimitRule;
 
 export interface SpendLimit {
   type: "spend_limit";
@@ -53,6 +54,11 @@ export interface TimeBoundsRule {
 export interface MaxOperationsRule {
   type: "max_operations";
   maxOperations: number;
+}
+
+export interface FeeLimitRule {
+  type: "fee_limit";
+  maxFeeStroops: number;
 }
 
 export interface PolicyStore {

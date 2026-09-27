@@ -1,6 +1,7 @@
 import type { StellarClient } from "@lumen/core";
 import { logger } from "../logger.js";
 import { sponsorBalanceXlm } from "../metrics.js";
+import type { WebhookDispatcher } from "../webhook/dispatcher.js";
 
 export interface SponsorMonitorOpts {
   client: StellarClient;
@@ -9,6 +10,7 @@ export interface SponsorMonitorOpts {
   pollIntervalMs?: number;
   onLowBalance?: (balance: number, threshold: number) => void | Promise<void>;
   webhookUrl?: string;
+  webhookDispatcher?: WebhookDispatcher;
 }
 
 export interface CheckBalanceResult {
@@ -24,6 +26,7 @@ export class SponsorMonitorService {
   private pollIntervalMs: number;
   private onLowBalance?: (balance: number, threshold: number) => void | Promise<void>;
   private webhookUrl?: string;
+  private webhookDispatcher?: WebhookDispatcher;
   private intervalId: NodeJS.Timeout | null = null;
 
   constructor(opts: SponsorMonitorOpts) {
@@ -42,6 +45,7 @@ export class SponsorMonitorService {
 
     this.onLowBalance = opts.onLowBalance;
     this.webhookUrl = opts.webhookUrl ?? process.env.SPONSOR_ALERT_WEBHOOK_URL;
+    this.webhookDispatcher = opts.webhookDispatcher;
   }
 
   get isRunning(): boolean {
@@ -51,9 +55,7 @@ export class SponsorMonitorService {
   async checkBalance(): Promise<CheckBalanceResult> {
     try {
       const account = await this.client.horizon.loadAccount(this.sponsorPublicKey);
-      const nativeBalanceLine = account.balances.find(
-        (b) => b.asset_type === "native"
-      );
+      const nativeBalanceLine = account.balances.find((b) => b.asset_type === "native");
 
       const balance = nativeBalanceLine ? parseFloat(nativeBalanceLine.balance) : 0;
       const isLow = balance < this.minBalanceXlm;
@@ -63,14 +65,17 @@ export class SponsorMonitorService {
       if (isLow) {
         logger.warn(
           { sponsorPublicKey: this.sponsorPublicKey, balance, minBalanceXlm: this.minBalanceXlm },
-          `Sponsor account balance (${balance} XLM) is below minimum threshold (${this.minBalanceXlm} XLM)`
+          `Sponsor account balance (${balance} XLM) is below minimum threshold (${this.minBalanceXlm} XLM)`,
         );
 
         if (this.onLowBalance) {
           try {
             await this.onLowBalance(balance, this.minBalanceXlm);
           } catch (err) {
-            logger.error({ err }, "[SponsorMonitorService] Error executing onLowBalance alert callback");
+            logger.error(
+              { err },
+              "[SponsorMonitorService] Error executing onLowBalance alert callback",
+            );
           }
         }
 
@@ -91,11 +96,29 @@ export class SponsorMonitorService {
             logger.error({ err }, "[SponsorMonitorService] Failed to send webhook alert");
           }
         }
+
+        if (this.webhookDispatcher) {
+          try {
+            await this.webhookDispatcher.dispatch("balance.low", {
+              sponsorPublicKey: this.sponsorPublicKey,
+              balance,
+              threshold: this.minBalanceXlm,
+            });
+          } catch (err) {
+            logger.error(
+              { err },
+              "[SponsorMonitorService] Failed to dispatch balance.low webhook event",
+            );
+          }
+        }
       }
 
       return { balance, isLow, threshold: this.minBalanceXlm };
     } catch (error) {
-      logger.error({ error, sponsorPublicKey: this.sponsorPublicKey }, "[SponsorMonitorService] Error loading sponsor account");
+      logger.error(
+        { error, sponsorPublicKey: this.sponsorPublicKey },
+        "[SponsorMonitorService] Error loading sponsor account",
+      );
       throw error;
     }
   }
