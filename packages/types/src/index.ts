@@ -11,6 +11,7 @@ export type {
   SessionKeyPolicyRule,
   TimeBoundsRule,
   MaxOperationsRule,
+  ContractAllowlistRule,
   PolicyStore,
 } from "./policy.js";
 export type { Signer } from "./signer.js";

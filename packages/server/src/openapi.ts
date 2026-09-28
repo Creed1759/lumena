@@ -167,6 +167,52 @@ export const openApiSpec = {
         },
       },
     },
+    "/wallets": {
+      get: {
+        summary: "List Registered Wallets",
+        description:
+          "Returns all wallet addresses registered in the WalletRegistry. Protected by API key authentication. Supports pagination via limit and offset query parameters.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: { type: "integer", minimum: 1, maximum: 200, default: 50 },
+            description: "Maximum number of wallets to return.",
+          },
+          {
+            name: "offset",
+            in: "query",
+            required: false,
+            schema: { type: "integer", minimum: 0, default: 0 },
+            description: "Number of wallets to skip for pagination.",
+          },
+        ],
+        responses: {
+          "200": {
+            description: "List of registered wallet addresses",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    wallets: {
+                      type: "array",
+                      items: { type: "string" },
+                      example: ["GAD7654...", "GCB2..."],
+                    },
+                    total: { type: "integer", example: 10 },
+                  },
+                  required: ["wallets", "total"],
+                },
+              },
+            },
+          },
+          "401": { description: "Missing or invalid API key" },
+        },
+      },
+    },
     "/wallet/create": {
       post: {
         summary: "Create Seedless Wallet",
@@ -274,6 +320,33 @@ export const openApiSpec = {
       },
     },
     "/policy": {
+      get: {
+        summary: "List All Policies",
+        description:
+          "Returns all active wallet policies configured in the policy engine. Protected by API key authentication.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "List of all configured policies",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    policies: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/Policy" },
+                    },
+                    count: { type: "integer", example: 3 },
+                  },
+                  required: ["policies", "count"],
+                },
+              },
+            },
+          },
+          "401": { description: "Missing or invalid API key" },
+        },
+      },
       post: {
         summary: "Create or Update Wallet Policy",
         description:
@@ -476,6 +549,37 @@ export const openApiSpec = {
           maxOperations: { type: "integer", example: 5 },
         },
         required: ["type", "maxOperations"],
+      },
+      ContractAllowlistRule: {
+        type: "object",
+        description:
+          "Restricts Soroban smart contract invocations to an explicit allowlist of contract IDs and optional method names.",
+        properties: {
+          type: { type: "string", enum: ["contract_allowlist"] },
+          allowedContracts: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                contractId: {
+                  type: "string",
+                  description: "The Soroban contract address.",
+                  example: "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                },
+                methods: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "Allowed method names. If omitted or empty, all methods are allowed.",
+                  example: ["transfer", "approve"],
+                },
+              },
+              required: ["contractId"],
+            },
+            minItems: 1,
+          },
+        },
+        required: ["type", "allowedContracts"],
       },
       Policy: {
         type: "object",

@@ -44,12 +44,25 @@ const MaxOperationsRuleSchema = z.object({
   maxOperations: z.number().int().positive("maxOperations must be a positive integer"),
 });
 
+const ContractAllowlistRuleSchema = z.object({
+  type: z.literal("contract_allowlist"),
+  allowedContracts: z
+    .array(
+      z.object({
+        contractId: z.string().min(1, "contractId is required"),
+        methods: z.array(z.string().min(1)).optional(),
+      }),
+    )
+    .min(1, "At least one contract must be specified"),
+});
+
 const PolicyRuleSchema = z.discriminatedUnion("type", [
   SpendLimitSchema,
   VelocityRuleSchema,
   AllowlistRuleSchema,
   BlocklistRuleSchema,
   MaxOperationsRuleSchema,
+  ContractAllowlistRuleSchema,
 ]);
 
 export const PolicyRequestSchema = z.object({
