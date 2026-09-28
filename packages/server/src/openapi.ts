@@ -167,6 +167,52 @@ export const openApiSpec = {
         },
       },
     },
+    "/wallets": {
+      get: {
+        summary: "List Registered Wallets",
+        description:
+          "Returns all wallet addresses registered in the WalletRegistry. Protected by API key authentication. Supports pagination via limit and offset query parameters.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: { type: "integer", minimum: 1, maximum: 200, default: 50 },
+            description: "Maximum number of wallets to return.",
+          },
+          {
+            name: "offset",
+            in: "query",
+            required: false,
+            schema: { type: "integer", minimum: 0, default: 0 },
+            description: "Number of wallets to skip for pagination.",
+          },
+        ],
+        responses: {
+          "200": {
+            description: "List of registered wallet addresses",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    wallets: {
+                      type: "array",
+                      items: { type: "string" },
+                      example: ["GAD7654...", "GCB2..."],
+                    },
+                    total: { type: "integer", example: 10 },
+                  },
+                  required: ["wallets", "total"],
+                },
+              },
+            },
+          },
+          "401": { description: "Missing or invalid API key" },
+        },
+      },
+    },
     "/wallet/create": {
       post: {
         summary: "Create Seedless Wallet",
@@ -274,6 +320,33 @@ export const openApiSpec = {
       },
     },
     "/policy": {
+      get: {
+        summary: "List All Policies",
+        description:
+          "Returns all active wallet policies configured in the policy engine. Protected by API key authentication.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "List of all configured policies",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    policies: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/Policy" },
+                    },
+                    count: { type: "integer", example: 3 },
+                  },
+                  required: ["policies", "count"],
+                },
+              },
+            },
+          },
+          "401": { description: "Missing or invalid API key" },
+        },
+      },
       post: {
         summary: "Create or Update Wallet Policy",
         description:
@@ -415,6 +488,179 @@ export const openApiSpec = {
         },
       },
     },
+    "/webhooks": {
+      get: {
+        summary: "List Webhooks",
+        description: "Returns all registered webhook configurations (secrets omitted).",
+        responses: {
+          "200": {
+            description: "List of registered webhooks",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/WebhookConfig" },
+                },
+              },
+            },
+          },
+        },
+      },
+      post: {
+        summary: "Register Webhook",
+        description: "Registers a new webhook endpoint to receive Lumen event notifications.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/WebhookRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "Webhook registered successfully",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/WebhookConfig" },
+              },
+            },
+          },
+          "400": { description: "Invalid webhook configuration" },
+        },
+      },
+    },
+    "/webhooks/{id}": {
+      delete: {
+        summary: "Delete Webhook",
+        description: "Unregisters a webhook by its ID.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+            description: "Webhook ID.",
+          },
+        ],
+        responses: {
+          "204": { description: "Webhook deleted" },
+          "404": { description: "Webhook not found" },
+        },
+      },
+      patch: {
+        summary: "Update Webhook",
+        description:
+          "Partially updates a webhook — toggle enabled state or change the subscribed event list. " +
+          "At least one field must be provided. The webhook ID and secret cannot be changed.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+            description: "Webhook ID.",
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  url: {
+                    type: "string",
+                    format: "uri",
+                    description: "New destination URL.",
+                    example: "https://example.com/webhook",
+                  },
+                  events: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Replacement event subscription list.",
+                    example: ["transaction.cosigned", "wallet.created"],
+                  },
+                  enabled: {
+                    type: "boolean",
+                    description: "Set to false to pause delivery without deleting the webhook.",
+                    example: false,
+                  },
+                },
+                minProperties: 1,
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Webhook updated successfully",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/WebhookConfig" },
+              },
+            },
+          },
+          "400": { description: "Invalid patch payload" },
+          "404": { description: "Webhook not found" },
+        },
+      },
+    },
+    "/webhooks/{id}/test": {
+      post: {
+        summary: "Send Test Webhook",
+        description:
+          "Dispatches a synthetic `test.ping` event to the registered webhook URL. " +
+          "Useful for verifying endpoint reachability and signature validation without " +
+          "triggering real on-chain activity.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+            description: "Webhook ID.",
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Test delivery attempted",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    success: {
+                      type: "boolean",
+                      description: "Whether the remote server returned a 2xx response.",
+                      example: true,
+                    },
+                    statusCode: {
+                      type: "integer",
+                      nullable: true,
+                      description: "HTTP status code returned by the remote server.",
+                      example: 200,
+                    },
+                    attempts: {
+                      type: "integer",
+                      description: "Always 1 for test deliveries.",
+                      example: 1,
+                    },
+                    responseTimeMs: {
+                      type: "integer",
+                      description: "Round-trip time in milliseconds.",
+                      example: 142,
+                    },
+                  },
+                  required: ["success", "statusCode", "attempts", "responseTimeMs"],
+                },
+              },
+            },
+          },
+          "404": { description: "Webhook not found" },
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -477,6 +723,37 @@ export const openApiSpec = {
         },
         required: ["type", "maxOperations"],
       },
+      ContractAllowlistRule: {
+        type: "object",
+        description:
+          "Restricts Soroban smart contract invocations to an explicit allowlist of contract IDs and optional method names.",
+        properties: {
+          type: { type: "string", enum: ["contract_allowlist"] },
+          allowedContracts: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                contractId: {
+                  type: "string",
+                  description: "The Soroban contract address.",
+                  example: "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+                },
+                methods: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "Allowed method names. If omitted or empty, all methods are allowed.",
+                  example: ["transfer", "approve"],
+                },
+              },
+              required: ["contractId"],
+            },
+            minItems: 1,
+          },
+        },
+        required: ["type", "allowedContracts"],
+      },
       Policy: {
         type: "object",
         properties: {
@@ -486,6 +763,40 @@ export const openApiSpec = {
           createdAt: { type: "string", format: "date-time" },
         },
         required: ["id", "walletId", "rules"],
+      },
+      WebhookConfig: {
+        type: "object",
+        description: "Registered webhook configuration (secret is never returned).",
+        properties: {
+          id: { type: "string", example: "550e8400-e29b-41d4-a716-446655440000" },
+          url: { type: "string", format: "uri", example: "https://example.com/webhook" },
+          events: {
+            type: "array",
+            items: { type: "string" },
+            example: ["transaction.cosigned", "wallet.created"],
+          },
+          enabled: { type: "boolean", example: true },
+        },
+        required: ["id", "url", "events"],
+      },
+      WebhookRequest: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Optional custom ID; auto-generated if omitted." },
+          url: { type: "string", format: "uri", example: "https://example.com/webhook" },
+          secret: {
+            type: "string",
+            description: "HMAC-SHA256 signing secret used to verify delivery signatures.",
+            example: "s3cr3t",
+          },
+          events: {
+            type: "array",
+            items: { type: "string" },
+            example: ["transaction.cosigned"],
+          },
+          enabled: { type: "boolean", default: true },
+        },
+        required: ["url", "secret", "events"],
       },
     },
   },

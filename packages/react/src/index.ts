@@ -41,3 +41,8 @@ export type { Transaction, UseTransactionHistoryResult } from "./use-transaction
 
 export { useSessionKey } from "./use-session-key.js";
 export type { SessionKeyState } from "./use-session-key.js";
+export { LumenBalance } from "./components/LumenBalance.js";
+export type { LumenBalanceProps } from "./components/LumenBalance.js";
+
+export { LumenWalletCard } from "./components/LumenWalletCard.js";
+export type { LumenWalletCardProps } from "./components/LumenWalletCard.js";

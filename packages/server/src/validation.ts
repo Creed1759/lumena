@@ -47,6 +47,16 @@ const MaxOperationsRuleSchema = z.object({
 const FeeLimitRuleSchema = z.object({
   type: z.literal("fee_limit"),
   maxFeeStroops: z.number().int().positive("maxFeeStroops must be a positive integer"),
+const ContractAllowlistRuleSchema = z.object({
+  type: z.literal("contract_allowlist"),
+  allowedContracts: z
+    .array(
+      z.object({
+        contractId: z.string().min(1, "contractId is required"),
+        methods: z.array(z.string().min(1)).optional(),
+      }),
+    )
+    .min(1, "At least one contract must be specified"),
 });
 
 const PolicyRuleSchema = z.discriminatedUnion("type", [
@@ -56,6 +66,7 @@ const PolicyRuleSchema = z.discriminatedUnion("type", [
   BlocklistRuleSchema,
   MaxOperationsRuleSchema,
   FeeLimitRuleSchema,
+  ContractAllowlistRuleSchema,
 ]);
 
 export const PolicyRequestSchema = z.object({
@@ -76,3 +87,19 @@ export const WebhookRequestSchema = z.object({
 });
 
 export type WebhookRequest = z.infer<typeof WebhookRequestSchema>;
+
+/**
+ * Schema for PATCH /webhooks/:id — all fields are optional.
+ * At least one field must be present.
+ */
+export const WebhookPatchSchema = z
+  .object({
+    url: z.string().url("url must be a valid URL").optional(),
+    events: z.array(z.string().min(1)).min(1, "at least one event is required").optional(),
+    enabled: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one field (url, events, or enabled) must be provided",
+  });
+
+export type WebhookPatch = z.infer<typeof WebhookPatchSchema>;

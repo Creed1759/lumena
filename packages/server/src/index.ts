@@ -17,4 +17,5 @@ export { EnvSigner } from "./signers/EnvSigner.js";
 export { AwsKmsSigner } from "./signers/AwsKmsSigner.js";
 export { GcpKmsSigner } from "./signers/GcpKmsSigner.js";
 export { VaultSigner } from "./signers/VaultSigner.js";
+export { AzureKeyVaultSigner } from "./signers/AzureKeyVaultSigner.js";
 export { CosignRequestSchema, FeeBumpRequestSchema, PolicyRequestSchema } from "./validation.js";

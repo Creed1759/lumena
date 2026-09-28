@@ -92,6 +92,7 @@ Two implementations ship with the server:
 | `AwsKmsSigner` | `src/signers/AwsKmsSigner.ts` | AWS KMS production signer |
 | `GcpKmsSigner` | `src/signers/GcpKmsSigner.ts` | Google Cloud KMS asymmetric signer |
 | `VaultSigner` | `src/signers/VaultSigner.ts` | HashiCorp Vault Transit native Ed25519 signer |
+| `AzureKeyVaultSigner` | `src/signers/AzureKeyVaultSigner.ts` | Azure Key Vault envelope-encryption signer |
 
 To add your own provider (HashiCorp Vault, GCP KMS, Nitro Enclave, etc.),
 implement the `Signer` interface and wire it in `main.ts`.
@@ -257,8 +258,131 @@ pnpm add @noble/curves   # for DER parsing helpers
 
 ### Azure Key Vault
 
-Supports ECDSA but not Ed25519 natively (as of 2026).  Use the envelope
-encryption pattern (Option B above) with an AKV-managed AES key.
+Azure Key Vault does not support Ed25519 natively (as of 2026). `AzureKeyVaultSigner`
+uses the **envelope encryption** pattern: the Ed25519 private key seed is wrapped
+(AES-256 encrypted) by an AKV RSA key and stored outside the vault; it is only
+decrypted in memory for the duration of each sign operation.
+
+#### Installation
+
+```bash
+pnpm add @azure/keyvault-keys @azure/identity
+```
+
+#### Required RBAC Roles
+
+Assign these roles to the managed identity or service principal running Lumen:
+
+| Role | Scope | Purpose |
+|---|---|---|
+| `Key Vault Crypto User` | Key resource | `wrapKey`, `unwrapKey`, `getKey` |
+| `Key Vault Crypto Officer` | Key resource | Only needed for key creation/rotation |
+
+> **Important:** Do **not** grant `Key Vault Administrator` or any data plane
+> wildcard role. Least-privilege means Crypto User only.
+
+#### Creating the Wrapping Key in Azure Key Vault
+
+```bash
+# Create a key vault (skip if one already exists)
+az keyvault create \
+  --name my-lumen-vault \
+  --resource-group my-rg \
+  --location eastus \
+  --sku premium   # premium supports HSM-backed keys
+
+# Create an RSA-HSM wrapping key for the co-signer
+az keyvault key create \
+  --vault-name my-lumen-vault \
+  --name lumen-cosigner-wrap \
+  --kty RSA-HSM \
+  --size 4096
+
+# Create an RSA-HSM wrapping key for the fee-payer
+az keyvault key create \
+  --vault-name my-lumen-vault \
+  --name lumen-feepayer-wrap \
+  --kty RSA-HSM \
+  --size 4096
+```
+
+#### Wrapping the Ed25519 Private Key Seed (one-time setup)
+
+Run this once in a trusted environment (not the production server) to produce
+the wrapped key ciphertext you will store in your secrets manager:
+
+```ts
+import { AzureKeyVaultSigner } from "@lumen/server";
+import { Keypair } from "@stellar/stellar-sdk";
+
+// Generate a new Ed25519 keypair (or use an existing one)
+const keypair = Keypair.random();
+const rawSeed = keypair.rawSecretKey(); // 32 bytes
+
+// Wrap the seed using Azure Key Vault
+const wrappedKey = await AzureKeyVaultSigner.wrapPrivateKey(
+  rawSeed,
+  "https://my-lumen-vault.vault.azure.net",
+  "lumen-cosigner-wrap",
+);
+
+console.log("Public key (store in .env):", keypair.publicKey());
+console.log("Wrapped key (store in secrets manager):", wrappedKey);
+
+// Zero the plaintext seed immediately
+rawSeed.fill(0);
+```
+
+Store the base64-encoded `wrappedKey` output in Azure App Configuration, Key
+Vault Secrets, or a CI/CD secrets store. **Never** commit it to version control.
+
+#### Environment Variables for AzureKeyVaultSigner
+
+```bash
+SIGNER_PROVIDER=azurekeyvault
+AZURE_KEY_VAULT_URL=https://my-lumen-vault.vault.azure.net
+AZURE_KEY_NAME=lumen-cosigner-wrap
+AZURE_WRAPPED_KEY=<base64-wrapped-seed-from-setup-step>
+
+# Standard Azure identity variables (pick one auth method):
+
+# Option A: Service principal
+AZURE_CLIENT_ID=<sp-client-id>
+AZURE_TENANT_ID=<tenant-id>
+AZURE_CLIENT_SECRET=<sp-secret>
+
+# Option B: Managed identity (recommended on Azure-hosted infra)
+# No extra variables needed; DefaultAzureCredential picks up the IMDS endpoint.
+```
+
+Usage with `AzureKeyVaultSigner`:
+
+```ts
+import { AzureKeyVaultSigner } from "@lumen/server";
+
+const cosigner = await AzureKeyVaultSigner.fromEnv();
+const feePayer = await AzureKeyVaultSigner.fromEnv(); // uses same env vars; set different ones per instance
+```
+
+Wire it into `main.ts` exactly as you would any other `Signer`:
+
+```ts
+import { createServer } from "@lumen/server";
+import { AzureKeyVaultSigner } from "@lumen/server";
+
+const cosignerSigner = await AzureKeyVaultSigner.fromEnv();
+createServer({ cosignerSigner, feePayerSigner: cosignerSigner, ... });
+```
+
+#### Security Notes
+
+- The plaintext seed is decrypted only in memory, for the duration of `init()`,
+  and is immediately zeroed after the `Keypair` object is constructed.
+- Call `signer.destroy()` when the process shuts down to clear the in-memory keypair.
+- Use a **Premium** or **Managed HSM** tier Key Vault for hardware-backed key storage.
+- Rotate the wrapping key annually or after any suspected compromise (see §6).
+- Enable Azure Key Vault [diagnostic logging](https://learn.microsoft.com/en-us/azure/key-vault/general/monitor-key-vault)
+  and ship logs to an immutable store (Azure Monitor Log Analytics with archive policy).
 
 ---
 

@@ -82,6 +82,71 @@ export class WebhookDispatcher {
     return Array.from(this.webhooks.values());
   }
 
+  /**
+   * Partially update an existing webhook registration.
+   * Returns the updated `WebhookConfig`, or `null` if the id is not found.
+   */
+  update(id: string, updates: Partial<Omit<WebhookConfig, "id">>): WebhookConfig | null {
+    const existing = this.webhooks.get(id);
+    if (!existing) return null;
+    const updated: WebhookConfig = { ...existing, ...updates, id };
+    this.webhooks.set(id, updated);
+    return updated;
+  }
+
+  /**
+   * Dispatch a synthetic `test.ping` event to a specific webhook by id.
+   * Returns a delivery summary describing the single attempt.
+   */
+  async sendTest(id: string): Promise<{
+    success: boolean;
+    statusCode?: number;
+    attempts: number;
+    responseTimeMs: number;
+  }> {
+    const wh = this.webhooks.get(id);
+    if (!wh) throw new Error(`Webhook not found: ${id}`);
+
+    const payload = {
+      id: randomUUID(),
+      event: "test.ping" as WebhookEventType,
+      timestamp: new Date().toISOString(),
+      data: { message: "This is a test delivery from the Lumen webhook system." },
+    };
+    const body = JSON.stringify(payload);
+    const signature = this.generateSignature(body, wh.secret);
+
+    const startTime = Date.now();
+    let statusCode: number | undefined;
+    let success = false;
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+
+      const res = await fetch(wh.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Lumen-Signature": signature,
+          "X-Lumen-Event": "test.ping",
+          "X-Lumen-Delivery": payload.id,
+        },
+        body,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+      statusCode = res.status;
+      success = res.ok;
+    } catch {
+      success = false;
+    }
+
+    const responseTimeMs = Date.now() - startTime;
+    return { success, statusCode, attempts: 1, responseTimeMs };
+  }
+
   async getDeliveryLog(): Promise<WebhookDeliveryLogEntry[]> {
     let contents: string;
     try {

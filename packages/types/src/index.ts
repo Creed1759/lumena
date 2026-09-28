@@ -12,6 +12,7 @@ export type {
   TimeBoundsRule,
   MaxOperationsRule,
   FeeLimitRule,
+  ContractAllowlistRule,
   PolicyStore,
 } from "./policy.js";
 export type { Signer } from "./signer.js";
