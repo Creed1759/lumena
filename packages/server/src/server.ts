@@ -19,6 +19,7 @@ import {
   FeeBumpRequestSchema,
   PolicyRequestSchema,
   WebhookRequestSchema,
+  WebhookPatchSchema,
 } from "./validation.js";
 import swaggerUi from "swagger-ui-express";
 import { openApiSpec } from "./openapi.js";
@@ -519,6 +520,47 @@ export function createServer(opts: ServerOpts): ServerResult {
     }
     res.status(204).send();
   });
+
+  app.patch(
+    "/webhooks/:id",
+    wrapHandler(async (req: Request, res: Response) => {
+      const id = req.params.id as string;
+
+      const parsed = WebhookPatchSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new ValidationError("Validation failed", parsed.error.flatten().fieldErrors);
+      }
+
+      const updated = webhookDispatcher.update(id, parsed.data);
+      if (!updated) {
+        res.status(404).json({ error: "Webhook not found" });
+        return;
+      }
+
+      const { secret: _secret, ...safeConfig } = updated;
+      res.json(safeConfig);
+    }),
+  );
+
+  app.post(
+    "/webhooks/:id/test",
+    wrapHandler(async (req: Request, res: Response) => {
+      const id = req.params.id as string;
+
+      if (!webhookDispatcher.get(id)) {
+        res.status(404).json({ error: "Webhook not found" });
+        return;
+      }
+
+      const result = await webhookDispatcher.sendTest(id);
+      res.json({
+        success: result.success,
+        statusCode: result.statusCode ?? null,
+        attempts: result.attempts,
+        responseTimeMs: result.responseTimeMs,
+      });
+    }),
+  );
 
   app.get(
     "/webhooks/deliveries",

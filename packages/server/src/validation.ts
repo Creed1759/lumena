@@ -83,3 +83,19 @@ export const WebhookRequestSchema = z.object({
 });
 
 export type WebhookRequest = z.infer<typeof WebhookRequestSchema>;
+
+/**
+ * Schema for PATCH /webhooks/:id — all fields are optional.
+ * At least one field must be present.
+ */
+export const WebhookPatchSchema = z
+  .object({
+    url: z.string().url("url must be a valid URL").optional(),
+    events: z.array(z.string().min(1)).min(1, "at least one event is required").optional(),
+    enabled: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one field (url, events, or enabled) must be provided",
+  });
+
+export type WebhookPatch = z.infer<typeof WebhookPatchSchema>;
